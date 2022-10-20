@@ -1,0 +1,101 @@
+services:
+
+  nginx:
+    build:
+      context: ./nginx/
+    networks:
+      - front
+      - back
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+      - static_files:/home/app/staticfiles
+      
+    depends_on:
+      - web
+    links:
+      - web
+  
+  # nginx-proxy-letsencrypt:
+  #   image: jrcs/letsencrypt-nginx-proxy-companion
+  #   env_file:
+  #     - ./.env.staging.proxy-companion
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - certs:/etc/nginx/certs
+  #     - html:/usr/share/nginx/html
+  #     - vhost:/etc/nginx/vhost.d
+  #     - acme:/etc/acme.sh
+  #   depends_on:
+  #     - nginx
+
+
+  web:
+    depends_on:
+      - redis
+    build:
+      context: ./djangosocial/
+    links:
+      # - postgres:postgres
+      - redis
+    volumes:
+      - ./djangosocial/:/usr/src/app/
+      - static_files:/usr/src/app/staticfiles
+    expose:
+     - 8000
+    networks:
+      - front
+      - back
+    command: bash -c "daphne -b 0.0.0.0 -p 8000 core.asgi:application"
+    env_file:
+      - ./djangosocial/.env
+
+ 
+
+  dns:
+    build:
+      context: ./dns/
+    restart: always
+    ports:
+      - 53:53
+      - 53:53/udp
+    volumes:
+      - ./dns/named.conf:/etc/bind/named.conf
+      - ./dns/zone/:/etc/bind/zone/
+    command: named -c /etc/bind/named.conf -g -u named
+
+  redis:
+    image: redis
+    networks:
+      - "back"
+    ports:
+      - 6379:6379
+
+  celery:
+    restart: always
+    build: 
+      context: ./djangosocial/
+    command: celery -A core worker -l info -P gevent
+    volumes:
+      - ./djangosocial/:/usr/src/app/
+    networks:
+      - "back"
+    depends_on:
+      - web
+      - redis
+
+    # volumes:
+    #   - redisdata:/data
+networks:
+  front:
+  back:
+volumes:
+  static_files:
+  # certs:
+  # html:
+  # vhost:
+  # acme:
+
+  # redisdata:
+
